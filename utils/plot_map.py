@@ -21,7 +21,8 @@ def PlotMap(data_, bs=None, map_type="roadmap"):
 	#     https://developers.google.com/maps/documentation/javascript/get-api-key
 	#
 	# Replace the value below with your personal API key:
-	plot.api_key = "AIzaSyDthyCGiKTxBwB7JUA0FP0g3cjGhWWPuC4"
+	# plot.api_key = "AIzaSyDthyCGiKTxBwB7JUA0FP0g3cjGhWWPuC4"
+	plot.api_key = "AIzaSyD-n_DViUNpTmYRgb2JCsC_gIHXpUMyMhQ"
 
 	source = ColumnDataSource(
 	    data=dict(
@@ -44,6 +45,6 @@ def PlotMap(data_, bs=None, map_type="roadmap"):
 
 	plot.add_tools(PanTool(), WheelZoomTool(), BoxSelectTool())
 	output_file("gmap_.html")
-	show(plot, "Chrome")
+	show(plot)
 
 
