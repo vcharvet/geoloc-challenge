@@ -37,6 +37,17 @@ dict_of_gby = {'rssi': ['bsid'],
 #features_of_interest = json.loads(open(foi_folder, 'r').read())
 
 def _build_features_dict(data_frame, features_of_interest):
+	"""
+
+	Parameters
+	----------
+	data_frame
+	features_of_interest
+
+	Returns
+	-------
+
+	"""
 
 	if 'latitude_bs' in list(features_of_interest.values())[0] or 'latitude_bs' in list(features_of_interest.values())[1]:
 		sys.stdout.write(u"\u001b[4mDownloading base stations informations (take a coffee, can take a while)\u001b[0m \u001b[1m\u001b[0m \n")
@@ -111,7 +122,22 @@ def _build_features_dict(data_frame, features_of_interest):
 	target_dict = {name: i for i, name in enumerate(target_name)}
 	return (feature_dict, feature_name), (target_dict, target_name)
 
+
 def my_parser(data, label, feature_dict, target_dict, features_of_interest):
+	"""
+
+	Parameters
+	----------
+	data
+	label
+	feature_dict
+	target_dict
+	features_of_interest
+
+	Returns
+	-------
+
+	"""
 	
 	data_copy = pd.concat((data, label), 1)
 	
