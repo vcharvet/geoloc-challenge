@@ -42,7 +42,7 @@ def PlotMap(data_, bs=None, map_type="roadmap"):
 
 	circle = Circle(x="lon", y="lat", size=2, fill_color="red", fill_alpha=.3, line_color=None)
 	plot.add_glyph(source, circle)
-
+	#@TODO change output file to notebook (no writing to html)
 	plot.add_tools(PanTool(), WheelZoomTool(), BoxSelectTool())
 	output_file("gmap_.html")
 	show(plot)

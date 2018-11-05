@@ -8,8 +8,7 @@ from sklearn.externals import joblib
 from sklearn.model_selection import train_test_split
 from collections import deque
 from scipy import sparse
-# import pandas as pd
-import modin.pandas as pd
+import pandas as pd 
 import numpy as np
 import scipy 
 from scipy import sparse
@@ -22,71 +21,9 @@ import copy
 
 sys.setrecursionlimit(10000)
 
+#foi_folder = sys.argv[1]
+#data_folder = sys.argv[2]
 
-
-
-def client_features(df, clt_spec_cols, group_key):
-	""" build features for df using client-specific features
-
-	Parameters
-	----------
-	df : pd.DataFrame or modin.pd.DataFrame
-
-	clt_spec_cols : list
-		column names of client specific features, like device name etc...
-		details on these features in README
-
-	group_key : str
-		name of the column to group data
-
-	Returns
-	-------
-
-	"""
-	df_features = df[clt_spec_cols + [group_key]].groupby(group_key,
-														  as_index=True,
-														  sort=False)
-
-	df_features = df_features.agg('first')
-
-	return df_features
-
-def bs_features(df, df_clt_features, bs_spec_cols, key1, key2):
-	"""
-
-	Parameters
-	----------
-	df
-	df_clt_features : pd.DataFrame or moding.pd.DataFrame
-		df containing client specific features, as output of `client_features`
-
-	bs_spec_cols : list
-	key1 : str
-		first group key, should be 'messsageid'
-	key2 : str
-		second group key, should be 'bsid'
-	Returns
-	-------
-	"""
-	# first step: compute column names
-	bsids = df[key2].unique()
-	for feature in bs_spec_cols:
-		for bsid in bsids:
-			df_clt_features[feature + str(bsid)] = ([0] * df_clt_features.shape[0])
-
-	# second step : group and fill the columns
-	df_gp = df[[key1, key2] + bs_spec_cols].groupby([key1, key2], as_index=True)
-	df_gp = df_gp.agg('first') # or mean?
-
-	for gp_row in df_gp.iterrows():
-		((msg_id, bsid), row) = gp_row
-		for feature, value in row.iteritems():
-			feature_name = feature + str(bsid)
-			df_clt_features.loc[msg_id, feature_name] = value
-
-	return df_clt_features
-
-#@deprecated
 dict_of_gby = {'rssi': ['bsid'],
 				'freq': ['bsid'],
 				'latitude_bs': ['bsid'],
@@ -96,6 +33,8 @@ dict_of_gby = {'rssi': ['bsid'],
 				'speed': [''],
 				'dtid': [''], 
 				'did': [''],}
+
+#features_of_interest = json.loads(open(foi_folder, 'r').read())
 
 def _build_features_dict(data_frame, features_of_interest):
 
@@ -119,6 +58,22 @@ def _build_features_dict(data_frame, features_of_interest):
 
 	l0 = len(data_frame)
 
+	## Discretization
+	
+	#sys.stdout.write(u"\u001b[4mDiscretization\u001b[0m:~ 0.300 m x 0.300 m square\n")
+
+	# LON_grid, LAT_grid = np.meshgrid(np.arange(data_frame.longitude.min()-1e-3,
+	#                                           data_frame.longitude.max()+1e-3, 1e-2),
+	#                                 np.arange(data_frame.latitude.min()-1e-3,
+	#                                           data_frame.latitude.max()+1e-3, 1e-2))
+
+	# Tree = KDTree(np.column_stack((LAT_grid.ravel(), LON_grid.ravel())))
+	# classes_ = {i: tuple(p) for i, p in enumerate(Tree.data)}
+	# classes = Tree.query(data_frame[['latitude', 'longitude']].values)[1]
+	# data_copy = data_frame.copy()
+	# data_copy['label'] = classes
+
+##
 
 	st = {f.__add__(x) for f in features_of_interest['features_of_interest'] \
 		  for x in dict_of_gby[f]}
@@ -141,7 +96,17 @@ def _build_features_dict(data_frame, features_of_interest):
 					target_name = target_name.union({f.__add__(str(gg))})
 			else:
 				target_name = target_name.union({str(f)})
-
+	# feature_name = {'RSSbs{bsid}'.format(bsid=x) for x in 
+    #                bsid_unique}
+	# feature_name = feature_name.union({'FreqRec{bsid}'.format(bsid=x) for x in 
+	#                 bsid_unique})
+	# #feature_name = feature_name.union({'LatLonGrid{bsid}'.format(bsid=x) for x in 
+	# #                bsid_unique})
+	# feature_name = feature_name.union({'Speed'})
+	# #feature_name = feature_name.union({'Period_since_{n}past_msgs_'.format(n=i) for i in np.arange(6)})
+	# feature_name = feature_name.union({'LatLonHistory_{n}'.format(n=i+1) for i in np.arange(0, 10)})
+	# #feature_name = feature_name.union({'Type_id_{}'.format(dtid) for dtid in df.dtid.unique()})
+	# #feature_name = feature_name.union({'Device_id_{}'.format(did) for did in did_unique})
 	feature_dict = {name: i for i, name in enumerate(feature_name)}
 	target_dict = {name: i for i, name in enumerate(target_name)}
 	return (feature_dict, feature_name), (target_dict, target_name)
@@ -156,18 +121,68 @@ def my_parser(data, label, feature_dict, target_dict, features_of_interest):
 	
 	groupby_msgid = data_it.groupby(['messageid', 'time_ux'],
 						sort=True, group_keys='time_ux')
-
-
+	##First we derive the vector of label y
+	#y = groupby_msgid[features_of_interest['target']].first()
+	
+	#Last_time_ = data_copy.groupby('did', sort=True, group_keys='time_ux')[['label', 'time_ux']]
+	
 	features_, I, J  = [], [], []
 	
 	y, I_output, J_output = [], [], []
 
-	it = enumerate(groupby_msgid)  #.__iter__()
+	it = enumerate(groupby_msgid).__iter__()
 
 	for ind, ((_, time_ux), value) in it:
 		time_ux = time_ux//1000
 		did = value.did.unique()[0]
+		#histo = Last_time_.get_group(did)
+		#histo_latence = histo[(histo.time_ux//1000 - time_ux)>3600]
+		#histo_latence_classe = histo_latence.label.sort_values(ascending=False)
 
+		# for n, c in enumerate(histo_latence_classe.values):
+		# 		if n > 9: 
+		# 			break
+		# 		else:
+		# 			I.append(ind)
+		# 			J.append(feature_dict['LatLonHistory_{}'.format(n+1)])
+		# 			data.append(c)
+
+# 	    dtid = value.dtid.unique()[0]
+#	    classe = value.classe.unique()[0]
+# 	    History[did].appendleft(classe)
+# 	    Time[did].appendleft(time_ux)
+# 	    delay = Time[did][0] - Time[did][-1]
+# 	    Period[did].appendleft(0)
+# 	    new_period = deque(**{'maxlen':6})
+
+# 	    #for d in Period[did]:
+# 	    #    new_period.appendleft(d + delay)
+
+# 	    #Period[did] = new_period
+
+# 	    design_dictionary = defaultdict(defaultdict)
+
+# 	    #I.append(ind)
+# 	    #J.append(feature_dict['Type_id_{}'.format(dtid)])
+# 	    #data.append(1)
+# 	    #I.append(ind)
+# 	    #J.append(feature_dict['Device_id_{}'.format(did)])
+# 	    #data.append(1)
+# 	    #I.append(ind)
+# 	    #J.append(feature_dict['Speed'])
+# 	    #data.append(np.nan_to_num(value.speed.values[0]))
+
+# 	    #for n, tt in enumerate(Period[did]):
+# 	    #    I.append(ind)
+# 	    #    J.append(feature_dict['Period_since_{}past_msgs_'.format(n)])
+# 	    #    data.append(tt)
+
+# 	    #for n, tt in enumerate(History[did]):
+# 	    #    if not n==0:
+# 	    #        I.append(ind)
+# 	    #        J.append(feature_dict['LatLonHistory_{}'.format(n)])
+# 	    #        data.append(tt)
+		
 		"""
 		fill y 
 		"""
@@ -182,6 +197,9 @@ def my_parser(data, label, feature_dict, target_dict, features_of_interest):
 					I_output.append(ind)
 					J_output.append(target_dict[k])
 					y.append(value[k].values[0]) 
+	# 	        I.append(ind)
+	# 	        J.append(feature_dict['LatLonGrid{}'.format(bsid)])
+	# 	        data.append(bs_classe[bsid])
 		"""
 		fill data 
 		"""
@@ -203,4 +221,9 @@ def my_parser(data, label, feature_dict, target_dict, features_of_interest):
 
 	return res
 
+#my_parser = memory_parseddata.cache(_my_parser)
+
+#if __name__== '__main__':
+#	(feature_dict, feature_name), (target_dict, target_name)  = _build_features_dict(data_folder, features_of_interest)
+#	my_parser(data_folder, feature_dict, target_dict)
 
