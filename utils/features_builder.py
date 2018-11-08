@@ -1,92 +1,201 @@
 import sys
 import os 
-import os.path as op
-import json
-import logging
-from sklearn.pipeline import Pipeline
-from sklearn.externals import joblib
-from sklearn.model_selection import train_test_split
-from collections import deque
-from scipy import sparse
-# import pandas as pd
-import modin.pandas as pd
+import pandas as pd
+# import modin.pandas as pd
 import numpy as np
 import scipy 
 from scipy import sparse
+from multiprocessing import Pool, Value
 #from tqdm import tqdm
-import geopy.distance as distance
-from scipy.spatial import KDTree
-import functools
-#import joblib
 import copy
 
 sys.setrecursionlimit(10000)
 
 
+class Builder(object):
+	""" class to build feature matrix
 
+	msgid : str
+		column name for message id
 
-def client_features(df, clt_spec_cols, group_key):
-	""" build features for df using client-specific features
+	bsid : str
+		column name for  basestation id
 
-	Parameters
-	----------
-	df : pd.DataFrame or modin.pd.DataFrame
+	clt_cols : str
+		name of the columns of client specific features
 
-	clt_spec_cols : list
-		column names of client specific features, like device name etc...
-		details on these features in README
-
-	group_key : str
-		name of the column to group data
-
-	Returns
-	-------
-
+	bs_cols : str
+		name of the columns of basestation specific features
 	"""
-	df_features = df[clt_spec_cols + [group_key]].groupby(group_key,
-														  as_index=True,
-														  sort=False)
+	def __init__(self, msgid, bsid, clt_cols, bs_cols, verbose):
+		self.msgid = msgid
+		self.bsid = bsid
+		self.clt_cols = clt_cols
+		self.bs_cols = bs_cols
+		# to keep track of work
+		self.counter = 1 #Value('i', 1)
+		self.verbose = verbose
+		# number of samples to classify
+		self.unique_messages = None
+		# df containing feature matrix after engineering
+		self.df_features_ = None
+		# df groupby message ids
+		self.df_gp_ = None
+		# bs feature names
+		self.bs_feature_names = None
 
-	df_features = df_features.agg('first')
 
-	return df_features
+	def client_features(self, df):
+		""" build features for df using client-specific features
 
-def bs_features(df, df_clt_features, bs_spec_cols, key1, key2):
-	"""
+		Parameters
+        ----------
+        df : pd.DataFrame or modin.pd.DataFrame
 
-	Parameters
-	----------
-	df
-	df_clt_features : pd.DataFrame or moding.pd.DataFrame
-		df containing client specific features, as output of `client_features`
+        Returns
+        -------
+        @TODO check return
+        df
+        same as input
 
-	bs_spec_cols : list
-	key1 : str
-		first group key, should be 'messsageid'
-	key2 : str
-		second group key, should be 'bsid'
-	Returns
-	-------
-	"""
-	# first step: compute column names
-	bsids = df[key2].unique()
-	for feature in bs_spec_cols:
-		for bsid in bsids:
-			df_clt_features[feature + str(bsid)] = ([0] * df_clt_features.shape[0])
+        """
+		df_features = \
+			df[self.clt_cols + [self.msgid]].groupby(self.msgid,
+													 as_index=True,
+													 sort=False)
 
-	# second step : group and fill the columns
-	df_gp = df[[key1, key2] + bs_spec_cols].groupby([key1, key2], as_index=True)
-	df_gp = df_gp.agg('first') # or mean?
+		df_features = df_features.agg('first')
 
-	for gp_row in df_gp.iterrows():
-		((msg_id, bsid), row) = gp_row
+		self.unique_messages = df[self.msgid].nunique()
+
+		self.df_features_ = df_features
+
+		return df
+
+	def gb_bs_features(self, df):#, verbose=10):
+		"""
+
+		Parameters
+		----------
+		df
+
+		verbose
+
+		Returns
+		-------
+		"""
+		# first step: compute column names
+		self.bs_feature_names = []
+		bsids = df[self.bsid].unique()
+		for feature in self.bs_cols:
+			for bsid in bsids:
+				# self.df_features_[feature + str(bsid)] = (
+				# 			[0] * self.df_features_.shape[0])
+				self.bs_feature_names.append(feature + str(bsid))
+
+		# second step : group and fill the columns
+		df_gp = df[[self.msgid, self.bsid] + self.bs_cols]\
+			.groupby([self.msgid, self.bsid], as_index=True)
+		df_gp = df_gp.agg('first')  # or mean?
+
+		n_gp = df_gp.shape[0]
+		print('Shape of df_groupby: {}'.format(df_gp.shape))
+
+		self.df_gp_ = df_gp
+
+		return df_gp
+
+
+	def fast_bs_features(self, n_jobs=2):
+		""" script to fetch bs features
+
+		Parameters
+		----------
+		verbose
+
+		Returns
+		-------
+
+		"""
+		if n_jobs == -1:
+			n_jobs = None
+			chunksize = int(self.unique_messages / 200)
+		else:
+			chunksize = int(self.df_gp_.shape[0] / n_jobs)
+
+		global res
+		with Pool(n_jobs) as pool:
+			res = pool.map(self._local_bs_feature, self.df_gp_.iterrows(),
+						   chunksize=chunksize)
+
+		df_res = pd.DataFrame(res, columns=[self.msgid] + self.bs_feature_names)
+		df_res = df_res.groupby(self.msgid, as_index=True).mean().fillna(0).to_sparse()
+		#.fillna(0).to_sparse()
+		# return self.df_features_
+
+		return df_res
+
+
+	def _local_bs_feature(self, gb_row):
+		"""
+
+		Parameters
+		----------
+		gb_row: tuple, ((msgid, bsid), row)
+
+		Returns
+		-------
+		"""
+		((msgid, bsid), row) = gb_row
+		self.counter += 1
+		if self.counter % self.verbose == 0:
+			print('{:.3f}% of database parsed'.format((self.counter /self.unique_messages)*100 ))
+		res = {self.msgid: msgid}
 		for feature, value in row.iteritems():
 			feature_name = feature + str(bsid)
-			df_clt_features.loc[msg_id, feature_name] = value
+			# self.df_features_.loc[msgid, feature_name] = value
+			res[feature_name] = value
 
-	return df_clt_features
+		return res
+		# return pd.DataFrame(res, index=res[msgid], columns=self.bs_feature_names)
 
-#@deprecated
+
+
+	# @deprecated
+	def bs_features(self, df, verbose= 10):
+		""" brute force construction of features, complexity O(npS)
+		n number of messages, p = bs-spec features, S number of bs
+
+		Parameters
+		----------
+		df
+		verbose
+		Returns
+		-------
+		"""
+		count = 1
+		for gp_row in self.df_gp_.iterrows():
+			((msg_id, bsid), row) = gp_row
+			count += 1
+			if count % verbose == 0:
+				print('Building feature for msg {}'.format(msg_id))
+				print('{:.3f}% of df_gp done'.format((count / n_gp) * 100))
+			for feature, value in row.iteritems():
+				feature_name = feature + str(bsid)
+				self.df_features_.loc[msg_id, feature_name] = value
+
+		return self.df_features_
+
+		
+
+
+
+
+
+
+
+
+# @deprecated
 dict_of_gby = {'rssi': ['bsid'],
 				'freq': ['bsid'],
 				'latitude_bs': ['bsid'],
