@@ -7,7 +7,6 @@ sys.path.append('.')
 
 from utils.features_builder import Builder
 
-#TODO add build2 to construct the whole feature matrix as in feature_engineering?
 
 
 def build():
@@ -37,6 +36,7 @@ def build():
     else: # set is train
         path = 'data/Validation/test_dataset.csv'
         data = pd.read_csv(path, sep=',')
+        bsids = data['bsid'].unique()
 
     clt_cols = ['dtid', 'time_ux_client', 'motion', 'speed', 'data_type',
                 'radius', 'seqnumber']
@@ -52,7 +52,7 @@ def build():
     df_gp = builder.gb_bs_features(data)
 
     df_client_features = builder.df_features_
-    df_bs_features = builder.fast_bs_features(-1)
+    df_bs_features = builder.fast_bs_features(3)
 
     # print('client features shape: {} \n basestation shape:{}'.format(builder.df_features_,
     #                                                                  df_bs_features))
@@ -78,15 +78,17 @@ def build():
     Xy.drop('data_type', axis=1, inplace=True)
     Xy = pd.concat([Xy, dtype_ohe], axis=1)
 
+    # dtid --> one-hot-encoding, ?% missing values
+
     # radius, numeric, 82% missing values input median
     radius_median = Xy['radius'].median()
     Xy.fillna({'radius': radius_median}, inplace=True)
 
     time_columns = ['time_ux{}'.format(bsid) for bsid in bsids]
 
-    #TODO change sign
+    #TODO change sign done
     for time_column in time_columns:
-        Xy[time_column] = (Xy[time_column] // 1000 - Xy['time_ux_client'] // 1000)
+        Xy[time_column] = - (Xy[time_column] // 1000 - Xy['time_ux_client'] // 1000)
 
     Xy.drop('time_ux_client', axis=1, inplace=True)
 
@@ -98,7 +100,7 @@ def build():
     # store.put('feature_matrix_toy', Xy)
     # store.close()
     else:
-        Xy.to_parquet('data/feature_matrix_test_v0.csv')
+        Xy.to_parquet('data/feature_matrix_test_v0.parquet')
 
     print('done')
     return 0
