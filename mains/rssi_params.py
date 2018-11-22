@@ -8,6 +8,7 @@ import numpy as np
 from scipy.optimize import minimize
 from scipy.linalg import norm
 import warnings
+from geopy.distance import geodesic
 
 
 
@@ -23,9 +24,13 @@ def main():
     df = df.merge(df_bs, on='bsid')
     res_dic = {}
 
-    for bsid in df['bsid'].unique():
+    bsids = df['bsid'].unique()
+    count = 0
+    for bsid in bsids:
         # using scipy's optimize
-        print('Optimizing bs:{}'.format(bsid))
+        print('Optimizing bs:{} --- {:.2f}% done' \
+              .format(bsid, count / bsids.shape[0] * 100))
+        count += 1
         mask_bs = df['bsid'] == bsid
         df_masked = df[mask_bs]
 
@@ -40,7 +45,6 @@ def main():
         res_dic[bsid] = (res_optim.x)
 
     # pd.DataFrame(res_dic).to_csv('data/rssi_params_res.csv', sep=';')
-
 
     return 0
 
@@ -57,17 +61,19 @@ def objective_fn(nd0, latitude_bs, longitude_bs, latitude, longitude, rssis,
     res = 0
     counter = 0
     for index, rssi in enumerate(rssis):
-        random = np.random.rand()
-        if random < frac:
-            distance = np.sqrt((latitude_bs[index] - latitude[index])**2 +
-                           (longitude_bs[index] - longitude[index])**2)
-            try:
-                new_value = (rssi + 10 * n * np.log(distance / d0))**2
-                res += new_value
-                counter += 1
-            except RuntimeWarning:
-                print("Runtime warning", distance, d0, "on iteration {}".format(counter))
-                break
+        # distance = np.sqrt((latitude_bs[index] - latitude[index])**2 +
+        #                (longitude_bs[index] - longitude[index])**2)
+        distance = geodesic((latitude_bs[index], longitude_bs[index]),
+                            (latitude[index], longitude[index])).km
+        try:
+            new_value = (rssi + 10 * n * np.log(distance / d0)) ** 2
+            res += new_value
+            counter += 1
+        except RuntimeWarning:
+            print("Runtime warning", distance, d0,
+                  "on iteration {}".format(counter))
+            break
+
     # print("Objective value: {:.3f}".format(res/counter), n, d0, counter)
     return res / counter
 
