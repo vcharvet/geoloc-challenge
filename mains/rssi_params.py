@@ -6,7 +6,10 @@ $ RSSI_{reçu} = RSSI_{send} + err + 10 n log(d/d0) $
 import pandas as pd
 import numpy as np
 from scipy.optimize import minimize
+from scipy.optimize.linesearch import LineSearchWarning
 from scipy.linalg import norm
+from multiprocessing import Pool
+from functools import partial
 import warnings
 from geopy.distance import geodesic
 
@@ -22,32 +25,42 @@ def main():
                                           'longitude']]
 
     df = df.merge(df_bs, on='bsid')
-    res_dic = {}
+    # res_dic = {}
 
     bsids = df['bsid'].unique()
-    count = 0
-    for bsid in bsids:
-        # using scipy's optimize
-        print('Optimizing bs:{} --- {:.2f}% done' \
-              .format(bsid, count / bsids.shape[0] * 100))
-        count += 1
-        mask_bs = df['bsid'] == bsid
-        df_masked = df[mask_bs]
 
-        fn_args = (df_masked['lat'].values, df_masked['lng'].values,
-                   df_masked['latitude'].values,
-                   df_masked['longitude'].values, df_masked['rssi'].values)
-        x0 = np.array([-1, 1e2])
-        options = {'disp': True, 'maxiter': 30, 'gtol':1e-3}
-        res_optim = minimize(objective_fn, x0=x0, args=fn_args, method='cg',
-                             options=options)
-        print(res_optim)
-        res_dic[bsid] = (res_optim.x)
+    n_jobs=4
 
-    # pd.DataFrame(res_dic).to_csv('data/rssi_params_res.csv', sep=';')
+    pool = Pool(n_jobs)
+    optimize_fn = partial(optimize_bs, df)
+    res = pool.map(optimize_fn, bsids,
+                   chunksize= bsids.shape[0] // n_jobs)
+    pool.close()
+    pool.join()
+
+    # df_res = pd.concat(res)
+    df_res = pd.DataFrame(res)
+    df_res.to_csv('data/rssi_params.csv', sep=';')
+    print(df_res.head())
 
     return 0
 
+def optimize_bs(df, bsid):
+    # using scipy's optimize
+    print('Optimizing bs: {} --- '.format(bsid))
+    mask_bs = df['bsid'] == bsid
+    df_masked = df[mask_bs]
+
+    fn_args = (df_masked['lat'].values, df_masked['lng'].values,
+               df_masked['latitude'].values,
+               df_masked['longitude'].values, df_masked['rssi'].values)
+    x0 = np.array([-1, 1e2])
+    options = {'disp': True, 'maxiter': 30, 'gtol':1e-3}
+    res_optim = minimize(objective_fn, x0=x0, args=fn_args,
+                         options=options)
+    print(res_optim)
+
+    return {'bsid': bsid, 'resultat_optims': res_optim}
 
 
 
@@ -69,12 +82,10 @@ def objective_fn(nd0, latitude_bs, longitude_bs, latitude, longitude, rssis,
             new_value = (rssi + 10 * n * np.log(distance / d0)) ** 2
             res += new_value
             counter += 1
-        except RuntimeWarning:
+        except LineSearchWarning:
             print("Runtime warning", distance, d0,
                   "on iteration {}".format(counter))
             break
-
-    # print("Objective value: {:.3f}".format(res/counter), n, d0, counter)
     return res / counter
 
 
