@@ -27,21 +27,20 @@ def build():
 
     if set == 'train':
         #train_path = 'data/Toy/db_toy.csv'
-        path = 'data/Train/train_dataset.csv' #, sep=','
-        data = pd.read_csv(path, sep=',')
+        path = 'data/Train/train_dataset_withdistMLP.parquet' #, sep=','
+        data = pd.read_parquet(path)
         train_labels = data[['messageid', 'latitude', 'longitude']] \
             .groupby('messageid', as_index=True).first()
         bsids = data['bsid'].unique()
 
     else: # set is train
-        path = 'data/Validation/test_dataset.csv'
-        data = pd.read_csv(path, sep=',')
+        path = 'data/Validation/test_dataset_withdistMLP.parquet'
+        data = pd.read_parquet(path)
         bsids = data['bsid'].unique()
 
-    clt_cols = ['dtid', 'time_ux_client', 'motion', 'speed', 'data_type',
-                'radius', 'seqnumber']
+    clt_cols = ['dtid', 'motion', 'speed', 'data_type','radius', 'seqnumber']
 
-    bs_cols = ['nseq', 'rssi', 'snr', 'freq', 'time_ux']
+    bs_cols = ['rssi', 'snr', 'estim_distance', 'latitude_bs', 'longitude_bs']
 
     builder = Builder('messageid', 'bsid', clt_cols, bs_cols, 50)
 
@@ -52,7 +51,7 @@ def build():
     df_gp = builder.gb_bs_features(data)
 
     df_client_features = builder.df_features_
-    df_bs_features = builder.fast_bs_features(3)
+    df_bs_features = builder.fast_bs_features(30)
 
     # print('client features shape: {} \n basestation shape:{}'.format(builder.df_features_,
     #                                                                  df_bs_features))
@@ -84,23 +83,20 @@ def build():
     radius_median = Xy['radius'].median()
     Xy.fillna({'radius': radius_median}, inplace=True)
 
-    time_columns = ['time_ux{}'.format(bsid) for bsid in bsids]
-
-    #TODO change sign done
-    for time_column in time_columns:
-        Xy[time_column] = - (Xy[time_column] // 1000 - Xy['time_ux_client'] // 1000)
-
-    Xy.drop('time_ux_client', axis=1, inplace=True)
+    # time_columns = ['time_ux{}'.format(bsid) for bsid in bsids]
+    # for time_column in time_columns:
+    #     Xy[time_column] = - (Xy[time_column] // 1000 - Xy['time_ux_client'] // 1000)
+    # Xy.drop('time_ux_client', axis=1, inplace=True)
 
     print('feature matrix shape: {}'.format(Xy.shape))
     if set == 'train':
-        Xy.to_parquet('data/feature_matrix_train_v0.parquet')
+        Xy.to_parquet('data/feature_matrix_train_vMLP.parquet')
     # Xy.to_hdf('data/store.h5', key='feature_matrix_toy', mode='w', dropna=True)
     # store = pd.HDFStore('data/store.h5')
     # store.put('feature_matrix_toy', Xy)
     # store.close()
     else:
-        Xy.to_parquet('data/feature_matrix_test_v0.parquet')
+        Xy.to_parquet('data/feature_matrix_test_vMLP.parquet')
 
     print('done')
     return 0
