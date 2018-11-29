@@ -1,3 +1,16 @@
+"""
+Our input datasets contain several rows per message, each message is present the
+number of times it has been received by an antenna.
+statics_params are the same for all couple (message, bs) bu param1, ... paramp
+are different for every couple:
+input [mssgid, bsid, static_params,  param1, ... paramp]  : that is p+p_0 parameters
+
+This class intends to transform the matrix into
+output[msgid, static_params, param1_bsid1, ..., paramp_bsid1, ...  paramp_bsid_I
+where there are I base stations
+it transform into a matrix with p * I + p_0 features
+"""
+
 import sys
 import os 
 import pandas as pd
@@ -21,11 +34,15 @@ class Builder(object):
 	bsid : str
 		column name for  basestation id
 
-	clt_cols : str
+	clt_cols : list of str
 		name of the columns of client specific features
+		Correspond to 'static' parameters
 
-	bs_cols : str
+	bs_cols : list of str
 		name of the columns of basestation specific features
+		corredpond to param1, ... paramp
+
+	verbose : bool
 	"""
 	def __init__(self, msgid, bsid, clt_cols, bs_cols, verbose):
 		self.msgid = msgid
@@ -46,11 +63,13 @@ class Builder(object):
 
 
 	def client_features(self, df):
-		""" build features for df using client-specific features
+		""" build features for df using client-specific features, ie
+		static features indicated in self.clt_cols
 
 		Parameters
         ----------
         df : pd.DataFrame or modin.pd.DataFrame
+        	raw input dataframe
 
         Returns
         -------
@@ -72,14 +91,14 @@ class Builder(object):
 
 		return df
 
-	def gb_bs_features(self, df):#, verbose=10):
-		"""
+	def gb_bs_features(self, df):
+		""" it fetches the name of the parameters as concatenation of strings
+		'param_name' + '_bsid' for simplicity
 
 		Parameters
 		----------
-		df
-
-		verbose
+		df : pd.DataFrame
+			raw input dataframe
 
 		Returns
 		-------
@@ -111,10 +130,14 @@ class Builder(object):
 
 		Parameters
 		----------
-		verbose
-
+		n_jobs : int, default=2
+			number of CPUs to use for parallel computation. If -1, all available
+			cores are used
 		Returns
 		-------
+		pd.DataFrame
+			the feature matrix with messageid as index and with concatenated
+			featurei_bsid feature columns
 
 		"""
 		if n_jobs == -1:
@@ -137,7 +160,8 @@ class Builder(object):
 
 
 	def _local_bs_feature(self, gb_row):
-		"""
+		"""	fetches a new row of bsid features
+		Function is private and only intended to use to ease parallel computation
 
 		Parameters
 		----------
@@ -185,131 +209,3 @@ class Builder(object):
 				self.df_features_.loc[msg_id, feature_name] = value
 
 		return self.df_features_
-
-		
-
-
-
-
-
-
-
-
-# @deprecated
-dict_of_gby = {'rssi': ['bsid'],
-				'freq': ['bsid'],
-				'latitude_bs': ['bsid'],
-				'longitude_bs': ['bsid'],
-				'latitude': [''],
-				'longitude': [''],
-				'speed': [''],
-				'dtid': [''], 
-				'did': [''],}
-
-def _build_features_dict(data_frame, features_of_interest):
-
-	if 'latitude_bs' in list(features_of_interest.values())[0] or 'latitude_bs' in list(features_of_interest.values())[1]:
-		sys.stdout.write(u"\u001b[4mDownloading base stations informations (take a coffee, can take a while)\u001b[0m \u001b[1m\u001b[0m \n")
-		from sigfox.datamart_data import BasestationData
-		basestationdata = BasestationData('/Users/kevinelgui/Thèse/Projet/Data/GeoDataFrame', **{'basestation_ids': bsid_unique}).dataframe
-		basestationdata = basestationdata[basestationdata.objid.isin(bsid_unique)]
-		data_frame['latitude_bs'] = data_frame.apply(lambda row: bs_dict[row['bsid']]['latitude'], 1)
-		data_frame['longitude_bs'] = data_frame.apply(lambda row: bs_dict[row['bsid']]['longitude'], 1)
-	#Verbose
-	bsid_nunique = data_frame.bsid.nunique()
-	bsid_unique = data_frame.bsid.unique()
-	did_nunique = data_frame.did.nunique()
-	sys.stdout.write(u"\u001b[4mFeatures of interest:\u001b[0m \u001b[1m {} \u001b[0m \n".format(
-	features_of_interest.get('features_of_interest')))
-	sys.stdout.write(u"\u001b[4mTarget:\u001b[0m \u001b[1m {} \u001b[0m \n".format(
-	features_of_interest.get('target')))
-	sys.stdout.write(u"\u001b[4mNb of base stations:\u001b[0m \u001b[1m {} \u001b[0m \n".format(bsid_nunique))
-	sys.stdout.write(u"\u001b[4mNb of unique DeviceId train:\u001b[0m \u001b[1m {} \u001b[0m\n".format(str(did_nunique)))
-
-	l0 = len(data_frame)
-
-
-	st = {f.__add__(x) for f in features_of_interest['features_of_interest'] \
-		  for x in dict_of_gby[f]}
-	feature_name = set({})
-	for f in features_of_interest['features_of_interest']:
-		for x in dict_of_gby[f]:
-			if x:
-				g = data_frame.groupby(x).groups
-				for gg in g:
-					feature_name = feature_name.union({f.__add__(str(gg))})
-			else:
-				feature_name = feature_name.union({str(f)})
-	
-	target_name = set({})
-	for f in features_of_interest['target']:
-		for x in dict_of_gby[f]:
-			if x:
-				g = data_frame.groupby(x).groups
-				for gg in g:
-					target_name = target_name.union({f.__add__(str(gg))})
-			else:
-				target_name = target_name.union({str(f)})
-
-	feature_dict = {name: i for i, name in enumerate(feature_name)}
-	target_dict = {name: i for i, name in enumerate(target_name)}
-	return (feature_dict, feature_name), (target_dict, target_name)
-
-def my_parser(data, label, feature_dict, target_dict, features_of_interest):
-	
-	data_copy = pd.concat((data, label), 1)
-	
-	res = {'dict_X': feature_dict, 'dict_y': target_dict} 
-
-	data_it = copy.deepcopy(data_copy)
-	
-	groupby_msgid = data_it.groupby(['messageid', 'time_ux'],
-						sort=True, group_keys='time_ux')
-
-
-	features_, I, J  = [], [], []
-	
-	y, I_output, J_output = [], [], []
-
-	it = enumerate(groupby_msgid)  #.__iter__()
-
-	for ind, ((_, time_ux), value) in it:
-		time_ux = time_ux//1000
-		did = value.did.unique()[0]
-
-		"""
-		fill y 
-		"""
-		for k in features_of_interest['target']:
-			for gb_key in dict_of_gby[k]:
-				if gb_key:
-					for g, val_gb in value.groupby(gb_key):
-							I_output.append(ind)
-							J_output.append(target_dict[k.__add__(str(g))])
-							y.append(val_gb[k].values[0])
-				else:
-					I_output.append(ind)
-					J_output.append(target_dict[k])
-					y.append(value[k].values[0]) 
-		"""
-		fill data 
-		"""
-		for k in features_of_interest['features_of_interest']:
-			for gb_key in dict_of_gby[k]:
-				if gb_key:
-					for g, val_gb in value.groupby(gb_key):
-							I.append(ind)
-							J.append(feature_dict[k.__add__(str(g))])
-							features_.append(1*(val_gb[k].max()< -1))
-				else:
-					I.append(ind)
-					J.append(feature_dict[k])
-					features_.append(1*(value[k].max()<-1))
-
-	coo_matrix_ = sparse.coo_matrix((features_, (I, J)), shape=(len(groupby_msgid), len(feature_dict)), dtype=np.int64)
-	coo_matrix_y = sparse.coo_matrix((np.array(y)[:,0], (I_output, J_output)), shape=(len(groupby_msgid), len(target_dict)), dtype=np.float32)
-	res.update({'X': coo_matrix_, 'y': coo_matrix_y })
-
-	return res
-
-
