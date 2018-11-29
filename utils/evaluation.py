@@ -58,7 +58,7 @@ def vincenty_vec(coord1, coord2):
 	return vin_vec_dist
 
 
-def criterion(y_pred, y_true, is_df):
+def criterion(y_true, y_pred, is_df):
 	"""
 
 	Parameters
@@ -76,7 +76,7 @@ def criterion(y_pred, y_true, is_df):
 	if is_df:
 		error_vector = vincenty_df(y_true, y_pred)
 	else:
-		error_vector = vincenty_vec(y_pred, y_true)
+		error_vector = vincenty_vec(y_true, y_pred)
 	return np.percentile(error_vector, 90)
 
 
