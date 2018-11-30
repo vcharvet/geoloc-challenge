@@ -54,7 +54,6 @@ def vincenty_vec(coord1, coord2):
         m[i] = vincenty_distance(coord1[i], coord2[i])
 
     """
-    coord1, coord2 = coord1.flatten(), coord2.flatten()
     assert (coord1.shape == coord2.shape)
     vin_vec_dist = [(vincenty(z1, z2)).km for (z1, z2) in zip(coord1, coord2)]
     return vin_vec_dist
