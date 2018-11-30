@@ -9,6 +9,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import cross_val_score
 from sklearn.metrics import make_scorer
+from sklearn.multioutput import MultiOutputRegressor
 from xgboost import XGBRegressor
 from scipy.sparse import csr_matrix
 
@@ -95,10 +96,11 @@ def optimize_rf():
         #                             max_depth=int(space['max_depth'])+1,
         #                             max_features='sqrt',
         #                             n_jobs=24)
-        clf = XGBRegressor(n_estimators=int(space['n_estimators'])+1,
+        xgb = XGBRegressor(n_estimators=int(space['n_estimators'])+1,
                            max_depth=int(space['max_depth'])+1,
                            learning_rate=space['learning_rate'],
                            n_jobs=3)
+        clf = MultiOutputRegressor(xgb)
         cv = cross_val_score(clf, X.loc[mask, :], y.values[mask], scoring=custom_loss,
                              cv=5, verbose=0, n_jobs=5)
         loss = - cv.mean()
